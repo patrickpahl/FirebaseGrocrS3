@@ -1,0 +1,6 @@
+framework module Pods_FirebaseGrocrS3Tests {
+  umbrella header "Pods-FirebaseGrocrS3Tests-umbrella.h"
+
+  export *
+  module * { export * }
+}
