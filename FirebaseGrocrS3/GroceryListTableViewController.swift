@@ -1,95 +1,214 @@
-//
 //  GroceryListTableViewController.swift
 //  FirebaseGrocrS3
-//
 //  Created by Patrick Pahl on 10/23/16.
 //  Copyright © 2016 Patrick Pahl. All rights reserved.
-//
 
 import UIKit
 
 class GroceryListTableViewController: UITableViewController {
-
+    
+    // MARK: Constants
+    let listToUsersSegue = "ListToUsersSegue"
+    
+    // MARK: Properties
+    let reference = FIRDatabase.database().reference(withPath: "grocery-items")
+    let userReference = FIRDatabase.database().reference(withPath: "online")
+    
+    var items: [GroceryItem] = []
+    var user: User?
+    var userCountBarButtonItem: UIBarButtonItem?
+    
+    // MARK: UIViewController Lifecycle
+    
     override func viewDidLoad() {
         super.viewDidLoad()
-
-        // Uncomment the following line to preserve selection between presentations
-        // self.clearsSelectionOnViewWillAppear = false
-
-        // Uncomment the following line to display an Edit button in the navigation bar for this view controller.
-        // self.navigationItem.rightBarButtonItem = self.editButtonItem()
+        
+        tableView.allowsMultipleSelectionDuringEditing = false
+        
+        userCountBarButtonItem = UIBarButtonItem(title: "1", style: .plain, target: self, action: #selector(userCountButtonDidTouch))
+        userCountBarButtonItem?.tintColor = UIColor.white
+        navigationItem.leftBarButtonItem = userCountBarButtonItem
+        
+        ///Using Firebase queries, you can sort the list by arbitrary properties
+        reference.queryOrdered(byChild: "completed").observe(.value, with: {  snapshot in
+            //Attach listener to receive updates whenever the grocery-items endpoint is modified.
+            var newItems: [GroceryItem] = []
+            //Store the latest version of the data in a local variable inside the listener’s closure.
+            for item in snapshot.children {
+            //The snapshot contains the entire list of grocery items, not just the updates. Using children, you loop through the grocery items
+                guard let itemASFirDataSnapshot = item as? FIRDataSnapshot else { return }
+                
+                let groceryItem = GroceryItem(snapshot: itemASFirDataSnapshot)
+                guard let unwrappedGroceryItem = groceryItem else { return }
+                
+                newItems.append(unwrappedGroceryItem)
+                //The GroceryItem struct has an init that populates its properties using a FIRDataSnapshot. A snapshot’s value is of type AnyObject, and can be a dictionary, array, number, or string. After creating an instance of GroceryItem, it’s added it to the array that contains the latest version of the data.
+            }
+            
+            self.items = newItems
+            self.tableView.reloadData()
+        })
+        
+        ///observer W/O query
+        /*
+        reference.observe(.value, with: { snapshot in
+        //Attach listener to receive updates whenever the grocery-items endpoint is modified.
+            var newItems: [GroceryItem] = []
+            //Store the latest version of the data in a local variable inside the listener’s closure.
+            for item in snapshot.children {
+            //The snapshot contains the entire list of grocery items, not just the updates. Using children, you loop through the grocery items.
+                guard let itemASFIRDataSnapshot = item as? FIRDataSnapshot else { return }
+                
+                let groceryItem = GroceryItem(snapshot: itemASFIRDataSnapshot)
+                guard let unwrappedGroceryItem = groceryItem else { return }
+                
+                newItems.append(unwrappedGroceryItem)
+                //The GroceryItem struct has an init that populates its properties using a FIRDataSnapshot. A snapshot’s value is of type AnyObject, and can be a dictionary, array, number, or string. After creating an instance of GroceryItem, it’s added it to the array that contains the latest version of the data.
+            }
+            self.items = newItems
+            self.tableView.reloadData()
+        })
+        */
+        
+        ///Here you attach an authentication observer to the Firebase auth object, that in turn assigns the user property when a user successfully signs in. If a user is logged in, they bypass LoginViewController and segue to the GroceryListTableViewController. When users add items, their email will show in the detail of the cell.
+        
+        FIRAuth.auth()?.addStateDidChangeListener { auth, user in
+            guard let user = user else { return }
+            self.user = User(authData: user)
+        
+            guard let unwrappedUser = self.user else { return }
+    
+            let currentUserRef = self.userReference.child(unwrappedUser.uid)
+            //Create a child reference using a user’s uid, which is generated when Firebase
+            currentUserRef.setValue(unwrappedUser.email)
+            currentUserRef.onDisconnectRemoveValue()
+            //Call onDisconnectRemoveValue() on currentUserRef. This removes the value at the reference’s location after the connection to Firebase closes, for instance when a user quits your app. This is perfect for monitoring users who have gone offline.
+        }
+        
+        //Creates an observer that monitors online users. When users go on-and-offline, the title of userCountBarButtonItem updates with the current user count.
+        userReference.observe(.value, with: { snapshot in
+            if snapshot.exists() {
+                self.userCountBarButtonItem?.title = snapshot.childrenCount.description
+            } else {
+                self.userCountBarButtonItem?.title = "0"
+            }
+        })
+        
+    ///end of VDL
     }
-
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
-    }
-
-    // MARK: - Table view data source
-
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        // #warning Incomplete implementation, return the number of sections
-        return 0
-    }
-
+    
+    // MARK: UITableView Delegate methods
+    
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        // #warning Incomplete implementation, return the number of rows
-        return 0
+        return items.count
     }
-
-    /*
+    
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "reuseIdentifier", for: indexPath)
-
-        // Configure the cell...
-
+        let cell = tableView.dequeueReusableCell(withIdentifier: "itemCell", for: indexPath)
+        let groceryItem = items[indexPath.row]
+        
+        cell.textLabel?.text = groceryItem.name
+        cell.detailTextLabel?.text = groceryItem.addedByUser
+        toggleCellCheckbox(cell, isCompleted: groceryItem.completed)
+        
         return cell
     }
-    */
-
-    /*
-    // Override to support conditional editing of the table view.
+    
     override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the specified item to be editable.
         return true
     }
-    */
-
-    /*
-    // Override to support editing the table view.
+    
+    ///Original: delete from array
+//    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
+//        if editingStyle == .delete {
+//            items.remove(at: indexPath.row)
+//            tableView.reloadData()
+//        }
+//    }
+    
+    ///Remove from Firebase
     override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCellEditingStyle, forRowAt indexPath: IndexPath) {
         if editingStyle == .delete {
-            // Delete the row from the data source
-            tableView.deleteRows(at: [indexPath], with: .fade)
-        } else if editingStyle == .insert {
-            // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-        }    
+            let groceryItem = items[indexPath.row]
+            groceryItem.reference?.removeValue()
+            //Each GroceryItem has a Firebase reference property named reference, and calling removeValue() on that reference causes the listener you defined in viewDidLoad() to fire. The listener has a closure attached that reloads the table view using the latest data.
+        }
     }
-    */
 
-    /*
-    // Override to support rearranging the table view.
-    override func tableView(_ tableView: UITableView, moveRowAt fromIndexPath: IndexPath, to: IndexPath) {
-
+    ///Original: toggle checkbox
+//    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+//        guard let cell = tableView.cellForRow(at: indexPath) else { return }
+//        var groceryItem = items[indexPath.row]
+//        let toggledCompletion = !groceryItem.completed
+//        
+//        toggleCellCheckbox(cell, isCompleted: toggledCompletion)
+//        groceryItem.completed = toggledCompletion
+//        tableView.reloadData()
+//    }
+    
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard let cell = tableView.cellForRow(at: indexPath) else { return }
+        //Find the cell the user tapped using cellForRow(at:)
+        let groceryItem = items[indexPath.row]
+        let toggledCompletion = !groceryItem.completed
+        toggleCellCheckbox(cell, isCompleted: toggledCompletion)
+        //Call toggleCellCheckbox(_:isCompleted:) to update the visual properties of the cell.
+        groceryItem.reference?.updateChildValues(["completed": toggledCompletion])
+        //Use updateChildValues(_:), passing a dictionary, to update Firebase. This method is different than setValue(_:) because it only applies updates, whereas setValue(_:) is destructive and replaces the entire value at that reference.
     }
-    */
-
-    /*
-    // Override to support conditional rearranging of the table view.
-    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the item to be re-orderable.
-        return true
+    
+    //Toggle Value
+    func toggleCellCheckbox(_ cell: UITableViewCell, isCompleted: Bool) {
+        if !isCompleted {
+            cell.accessoryType = .none
+            cell.textLabel?.textColor = UIColor.black
+            cell.detailTextLabel?.textColor = UIColor.black
+        } else {
+            cell.accessoryType = .checkmark
+            cell.textLabel?.textColor = UIColor.gray
+            cell.detailTextLabel?.textColor = UIColor.gray
+        }
     }
-    */
+    
+    // MARK: Add Item
+    
+    @IBAction func addButtonTapped(_ sender: Any) {
+        
+        let alert = UIAlertController(title: "Grocery Item", message: "Add an Item", preferredStyle: .alert)
 
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destinationViewController.
-        // Pass the selected object to the new view controller.
+        ///Original save action: Saves to local array
+        /*
+        let saveAction = UIAlertAction(title: "Save", style: .default) { action in
+        let textField = alert.textFields?[0]
+        guard let textFieldText = textField?.text else { return }
+        guard let userEmail = self.user?.email else { return }
+                                        
+        let groceryItem = GroceryItem(name: textFieldText, addedByUser: userEmail, completed: false)
+        self.items.append(groceryItem)
+        self.tableView.reloadData()
+        }
+        */
+        
+        ///Save to Firebase
+        let saveAction = UIAlertAction(title: "Save", style: .default) { _ in
+            
+            guard let textField = alert.textFields?.first, let text = textField.text else { return }
+            guard let userEmail = self.user?.email else { return }
+            
+            let groceryItem = GroceryItem(name: text, addedByUser: userEmail, completed: false)
+            let groceryItemReference = self.reference.child(text.lowercased())
+            groceryItemReference.setValue(groceryItem.toAnyObject())
+        }
+        
+        let cancelAction = UIAlertAction(title: "Cancel", style: .default)
+        alert.addTextField()
+        alert.addAction(saveAction)
+        alert.addAction(cancelAction)
+        present(alert, animated: true, completion: nil)
     }
-    */
-
+    
+    func userCountButtonDidTouch() {
+        performSegue(withIdentifier: listToUsersSegue, sender: nil)
+    }
+    
 }

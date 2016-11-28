@@ -146,8 +146,8 @@
 		79D0D5AB1DBC91160068D607 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				79D0D5A71DBC90F90068D607 /* User.swift */,
 				79D0D5A91DBC91100068D607 /* GroceryItem.swift */,
+				79D0D5A71DBC90F90068D607 /* User.swift */,
 			);
 			name = Models;
 			sourceTree = "<group>";
